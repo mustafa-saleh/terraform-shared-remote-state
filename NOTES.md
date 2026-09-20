@@ -781,5 +781,46 @@ In Jenkins, Create credentials of type "secret text" for "jenkins_aws_access_key
 
 Modify the security group in terraform to allow inbound traffic on port 22 for SSH access from jenkins IP address.
 
-We've to execute `docker login` on remote server in "deply" stage of the pipeline to pull the docker image from docker hub. check "server-cmds.sh" file for the commands to be executed on the remote server.
+We've to execute `docker login` on remote server in "deploy" stage of the pipeline to pull the docker image from docker hub. check "server-cmds.sh" file for the commands to be executed on the remote server.
 
+## 25 - Remote State in Terraform
+
+Terraform remote state allows you to store the state file in a remote backend, such as AWS S3, Azure Blob Storage, or HashiCorp Consul. This allows multiple users to work on the same infrastructure and share the state file, while also providing versioning and locking capabilities.
+
+Configure Remote State in Terraform by adding the following block to your Terraform configuration:
+
+- "Backends" determine how state is loaded and stored. Default is local storage.
+
+```tf
+terraform {
+  required_version = ">= 1.0.0"
+  backend "s3" {
+    bucket = "my-terraform-state-bucket"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+```
+
+Create the S3 bucket in AWS console or via terraform to store the state file. The bucket name must be unique across all AWS accounts.
+
+To sync the local state file with the remote state file, run the following command:
+
+```sh
+terraform init
+```
+
+## 26 - Terraform Best Practices
+
+- Manipulate state only through TF commands
+- Always set up a shared remote state instead of on your laptop or in Git
+- Use state locking (locks state file until writing of state file is completed)
+- Back up your state file and enable versioning (allows for state recovery)
+- Use 1 state per environment
+- Host TF scripts in Git repository
+- CI for TF code (review TF code, run automated tests)
+- Apply TF ONLY through CD pipeline (instead of manually)
+- Use _ (underscore) instead of - (dash) in all resource names, data source names, variable names, outputs etc.
+- Only use lowercase letters and numbers
+- Use a consistent structure and naming convention
+- Don’t hardcode values as much as possible - pass as variables or use data sources to get a value

@@ -1,4 +1,4 @@
-# Jenkins Complete CI/CD with Terraform
+# Jenkins Complete CI/CD with Terraform Shared Remote State
 
 Terraform is an infrastructure as code tool that lets you build, change, and version cloud and on-prem resources safely and efficiently using human-readable configuration files.
 
@@ -23,6 +23,7 @@ The implementation combines CI and CD in one pipeline:
 - Idempotency: repeated runs converge to desired state without duplicating resources.
 - Provider ecosystem: integrates with AWS and many other platforms.
 - Automation-friendly: easily integrated into CI/CD pipelines such as Jenkins.
+- Remote state backends: state can be stored remotely (for example in AWS S3) so it is shared safely across team members and CI/CD jobs instead of living only on a laptop or in Git.
 
 ## Demo Project
 
@@ -55,7 +56,7 @@ Jenkins Complete CI/CD with Terraform
 ## Repository structure
 
 ```text
-jenkins-ci-cd-with-terraform/
+terraform-shared-remote-state/
 ├── README.md
 ├── NOTES.md
 ├── Jenkinsfile
@@ -75,7 +76,8 @@ jenkins-ci-cd-with-terraform/
     ├── jenkins-pipeline-success-browser.png
     ├── java-maven-app-browser.png
     ├── ec2-terraform-created-console.png
-    └── ec2-java-app-deployed-terminal.png
+    ├── ec2-java-app-deployed-terminal.png
+    └── terraform-remote-s3-state-console.png
 ```
 
 ## Architecture overview
@@ -208,6 +210,7 @@ Important implementation details from terraform/main.tf:
 - Inbound app port 8080 is open for browser access.
 - user_data executes terraform/entry-script.sh to install Docker and Docker Compose.
 - Terraform output ec2-public_ip is consumed by Jenkins deployment stage.
+- The `terraform` block configures an `s3` backend so the state file is stored remotely instead of on the local machine or in Git.
 
 Terraform variables in terraform/variables.tf include:
 
@@ -217,7 +220,37 @@ Terraform variables in terraform/variables.tf include:
 - my_ip, jenkins_ip
 - instance_type
 
-### 4. Jenkins pipeline stages
+### 4. Configure Terraform shared remote state with S3
+
+Terraform remote state allows the state file to be stored in a remote backend, such as AWS S3, Azure Blob Storage, or HashiCorp Consul. This enables multiple users and CI/CD jobs to work against the same infrastructure and share the same state file, while also supporting versioning and locking.
+
+Backends determine how state is loaded and stored; the default is local storage on disk. This project switches to an S3 backend by adding the following block to terraform/main.tf:
+
+```hcl
+terraform {
+  required_version = ">= 0.12"
+  backend "s3" {
+    bucket = "myapp-tf-srs-s3-bucket"
+    key = "myapp/state.tfstate"
+    region = "eu-central-1"
+  }
+}
+```
+
+Steps followed to implement shared remote state:
+
+- Created an S3 bucket (myapp-tf-srs-s3-bucket) in AWS to store the Terraform state file. The bucket name must be unique across all AWS accounts.
+- Added the `backend "s3"` block to the `terraform` configuration block in terraform/main.tf, specifying the bucket, the state file key (myapp/state.tfstate), and the AWS region.
+- Ran `terraform init` to migrate the existing local state into the new S3 backend:
+
+```sh
+terraform init
+```
+
+- Verified the state file was uploaded to the S3 bucket in the AWS console.
+- Re-ran the Jenkins pipeline so the same shared state is read and updated by every pipeline execution, instead of relying on state stored on the Jenkins container's local disk.
+
+### 5. Jenkins pipeline stages
 
 The Jenkinsfile implements four key stages:
 
@@ -241,7 +274,7 @@ The Jenkinsfile implements four key stages:
 - Copies server-cmds.sh and docker-compose.yaml to EC2 via scp.
 - Executes remote deployment command via sshagent.
 
-### 5. Remote deployment logic on EC2
+### 6. Remote deployment logic on EC2
 
 server-cmds.sh performs:
 
@@ -256,7 +289,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 docker-compose version
 ```
 
-### 6. Pipeline execution flow
+### 7. Pipeline execution flow
 
 Typical release execution:
 
@@ -267,7 +300,7 @@ Typical release execution:
 - Deploy stage updates running containers on provisioned host.
 - Application becomes reachable in browser on EC2 public IP:8080.
 
-### 7. Evidence and validation screenshots
+### 8. Evidence and validation screenshots
 
 Jenkins pipeline finished successfully ✅
 
@@ -277,6 +310,10 @@ EC2 instance provisioned by Terraform in AWS Console ✅
 
 ![EC2 created via Terraform](images/ec2-terraform-created-console.png)
 
+Terraform state file stored remotely in the S3 bucket ✅
+
+![Terraform remote state in S3 console](images/terraform-remote-s3-state-console.png)
+
 Deployment executed on server terminal ✅
 
 ![EC2 deployment terminal output](images/ec2-java-app-deployed-terminal.png)
@@ -285,16 +322,33 @@ Application reachable in browser ✅
 
 ![Java Maven app in browser](images/java-maven-app-browser.png)
 
+## Terraform Best Practices
+
+- Manipulate state only through TF commands
+- Always set up a shared remote state instead of on your laptop or in Git
+- Use state locking (locks state file until writing of state file is completed)
+- Back up your state file and enable versioning (allows for state recovery)
+- Use 1 state per environment
+- Host TF scripts in Git repository
+- CI for TF code (review TF code, run automated tests)
+- Apply TF ONLY through CD pipeline (instead of manually)
+- Use _ (underscore) instead of - (dash) in all resource names, data source names, variable names, outputs etc.
+- Only use lowercase letters and numbers
+- Use a consistent structure and naming convention
+- Don’t hardcode values as much as possible - pass as variables or use data sources to get a value
+
 ## Final result
 
-This project delivers a complete CI/CD workflow with infrastructure provisioning embedded in the delivery process. Every pipeline run can build the app, publish the container, provision EC2 with Terraform, and deploy the latest version automatically. 🚀
+This project delivers a complete CI/CD workflow with infrastructure provisioning embedded in the delivery process. Every pipeline run can build the app, publish the container, provision EC2 with Terraform, and deploy the latest version automatically. Terraform state is now stored remotely in an AWS S3 bucket, so the pipeline and any collaborators always operate against the same shared source of truth for infrastructure. 🚀
 
-DevOps, CI/CD, IaC, Docker, Containers, AWS, Jenkins
+#DevOps #CICD #IaC #Docker #Containers #AWS #Jenkins #TerraformRemoteState
 
 ## References
 
 - Terraform intro: https://developer.hashicorp.com/terraform/intro
 - Terraform installation: https://developer.hashicorp.com/terraform/downloads
+- Terraform backend configuration: https://developer.hashicorp.com/terraform/language/settings/backends/configuration
+- Terraform S3 backend: https://developer.hashicorp.com/terraform/language/settings/backends/s3
 - Jenkins documentation: https://www.jenkins.io/doc/
 - Jenkins homepage: https://www.jenkins.io/
 - Docker Compose standalone install: https://docs.docker.com/compose/install/standalone/
